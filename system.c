@@ -6,11 +6,14 @@
 #include "w6502.c"
 
 const int screen_width = 256; const int screen_height = 256;
+const uint8_t* os_keyboard;
 
 const uint32_t tick_interval = 1000/50;
 uint32_t next_time = 0;
 
-uint8_t system_memory[0x10000];
+uint8_t system_ram[0x7000];
+uint8_t system_rom[0x8000];
+
 int cur_cycle = 7;
 
 int font[256][8][8];
@@ -67,6 +70,87 @@ int cpu_state(CPU* cpu) {
     printf("A:%X X:%X Y:%X P:%X SP:%X I:%X C:%X | PC:%4X \n", cpu->A, cpu->X, cpu->Y, cpu->P, cpu->S, cpu->I, cpu->C, cpu->PC);
 }
 
+uint8_t system_access(CPU *cpu,ACCESS *result) {
+    uint8_t operand = result->value;
+    
+    if (result->address < 0x7000) {
+        if (result->type == READ) {
+            operand = system_ram[result->address];
+        } else {
+            system_ram[result->address] = operand;
+        }
+    } else if (result->address < 0x8000) {
+        // Keyboard Reading
+        if (!(result->address & 0x80)) {
+            operand = 0x00;
+            int row = (result->address & 0xF0) >> 4;
+            switch (row) {
+                case 0:
+                    if (os_keyboard[SDL_SCANCODE_ESCAPE]) operand |= 0x01;
+                    if (os_keyboard[SDL_SCANCODE_W]) operand |= 0x02;
+                    if (os_keyboard[SDL_SCANCODE_E]) operand |= 0x04;
+                    if (os_keyboard[SDL_SCANCODE_R]) operand |= 0x08;
+                    if (os_keyboard[SDL_SCANCODE_T]) operand |= 0x10;
+                    if (os_keyboard[SDL_SCANCODE_U]) operand |= 0x20;
+                    if (os_keyboard[SDL_SCANCODE_I]) operand |= 0x40;
+                    if (os_keyboard[SDL_SCANCODE_O]) operand |= 0x80;
+                    
+                    break;
+                case 1:
+                    if (os_keyboard[SDL_SCANCODE_LALT]) operand |= 0x01;
+                    if (os_keyboard[SDL_SCANCODE_Q]) operand |= 0x02;
+                    if (os_keyboard[SDL_SCANCODE_S]) operand |= 0x04;
+                    if (os_keyboard[SDL_SCANCODE_G]) operand |= 0x08;
+                    if (os_keyboard[SDL_SCANCODE_Y]) operand |= 0x10;
+                    if (os_keyboard[SDL_SCANCODE_J]) operand |= 0x20;
+                    if (os_keyboard[SDL_SCANCODE_K]) operand |= 0x40;
+                    if (os_keyboard[SDL_SCANCODE_P]) operand |= 0x80;
+                    
+                    break;
+                case 2:
+                    if (os_keyboard[SDL_SCANCODE_LSHIFT]) operand |= 0x01;
+                    if (os_keyboard[SDL_SCANCODE_A]) operand |= 0x02;
+                    if (os_keyboard[SDL_SCANCODE_D]) operand |= 0x04;
+                    if (os_keyboard[SDL_SCANCODE_V]) operand |= 0x08;
+                    if (os_keyboard[SDL_SCANCODE_H]) operand |= 0x10;
+                    if (os_keyboard[SDL_SCANCODE_M]) operand |= 0x20;
+                    if (os_keyboard[SDL_SCANCODE_L]) operand |= 0x40;
+                    if (os_keyboard[SDL_SCANCODE_BACKSPACE]) operand |= 0x80;
+                    
+                    break;
+                case 3:
+                    if (os_keyboard[SDL_SCANCODE_TAB]) operand |= 0x01;
+                    if (os_keyboard[SDL_SCANCODE_Z]) operand |= 0x02;
+                    if (os_keyboard[SDL_SCANCODE_F]) operand |= 0x04;
+                    if (os_keyboard[SDL_SCANCODE_B]) operand |= 0x08;
+                    if (os_keyboard[SDL_SCANCODE_N]) operand |= 0x10;
+                    if (os_keyboard[SDL_SCANCODE_COMMA]) operand |= 0x20;
+                    if (os_keyboard[SDL_SCANCODE_PERIOD]) operand |= 0x40;
+                    if (os_keyboard[SDL_SCANCODE_RETURN]) operand |= 0x80;
+                    break;
+                case 4:
+                    if (os_keyboard[SDL_SCANCODE_LCTRL]) operand |= 0x01;
+                    if (os_keyboard[SDL_SCANCODE_X]) operand |= 0x02;
+                    if (os_keyboard[SDL_SCANCODE_C]) operand |= 0x04;
+                    if (os_keyboard[SDL_SCANCODE_SPACE]) operand |= 0x08;
+                    if (os_keyboard[SDL_SCANCODE_UP]) operand |= 0x10;
+                    if (os_keyboard[SDL_SCANCODE_LEFT]) operand |= 0x20;
+                    if (os_keyboard[SDL_SCANCODE_DOWN]) operand |= 0x40;
+                    if (os_keyboard[SDL_SCANCODE_RIGHT]) operand |= 0x80;
+                    break;
+                default:
+                    break;
+            }
+        }
+    } else {
+        if (result->type == READ) {
+            operand = system_rom[result->address - 0x8000];
+        }
+    }
+    
+    return operand;
+}
+
 int render_screen(SDL_Texture* texture) {
     int *pixels = NULL;
     int pitch;
@@ -82,10 +166,10 @@ int render_screen(SDL_Texture* texture) {
         
         int index = (x/8) + (y/8)*32;
         
-        uint8_t character = system_memory[0x6C00 + index];
+        uint8_t character = system_ram[0x6C00 + index];
         uint32_t pal[2] = {
-            palette[system_memory[0x6800 + index] & 0x0F],
-            palette[system_memory[0x6800 + index] >> 4]
+            palette[system_ram[0x6800 + index] & 0x0F],
+            palette[system_ram[0x6800 + index] >> 4]
         };
         
         p = font[character][x%8][y%8];
@@ -139,8 +223,8 @@ int main(void)
     SDL_FreeSurface(font_texture_rgb);
     
     FILE *fp;
-    fp = fopen("prg.65x", "rb");
-    fread(system_memory+0x8000, sizeof(uint8_t), 32*1024, fp);
+    fp = fopen("test.65x", "rb");
+    fread(system_rom, sizeof(uint8_t), 32*1024, fp);
     fclose(fp);
     
     w6502_setup();
@@ -183,6 +267,8 @@ int main(void)
                   quit = 1;
                }
             }
+            SDL_PumpEvents();
+            os_keyboard = SDL_GetKeyboardState(NULL);
             }
         }
         else {
@@ -213,16 +299,9 @@ int main(void)
         
         cpu_tick1(&cpu, &result);
         
-        uint8_t operand = result.value;
-        if (result.type == READ) {
-            operand = system_memory[result.address];
-        } else {
-            system_memory[result.address] = operand;
-            
-        }
+        uint8_t operand = system_access(&cpu, &result);
         
         //printf(" , %xm %x @%x", result.type, operand, result.address);
-        
         
         cpu_tick2(&cpu, operand);
         
