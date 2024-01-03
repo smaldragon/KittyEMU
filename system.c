@@ -1,6 +1,6 @@
 #include <stdio.h>
-# include <SDL2/SDL.h>
-# include <SDL2/SDL_image.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include <termios.h>
 #include <unistd.h>
 #include "w6502.c"
@@ -180,6 +180,18 @@ int render_screen(SDL_Texture* texture) {
 
 }
 
+int loadrom(char* filename, CPU* cpu) 
+{
+    FILE *fp;
+    fp = fopen(filename, "rb");
+    fread(system_rom, sizeof(uint8_t), 32*1024, fp);
+    fclose(fp);
+    
+    cpu->C = 0; cpu->IRQ = 0; cpu->NMI = 0; cpu->RESET = 1;
+    cpu->P  = 0x24;
+    cpu->S  = 0xFD;
+}
+
 int main(void)
 {   
     SDL_Init(SDL_INIT_VIDEO);
@@ -205,6 +217,8 @@ int main(void)
     SDL_Surface* font_texture = IMG_Load("font.png");
     SDL_Surface* font_texture_rgb = SDL_ConvertSurfaceFormat(font_texture, SDL_PIXELFORMAT_RGBA32, 0);
     
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
+    
     uint32_t* pixels = (uint32_t*)font_texture_rgb->pixels;
     printf("\n%X  ", font_texture_rgb->pitch);
     
@@ -222,23 +236,15 @@ int main(void)
     SDL_FreeSurface(font_texture);
     SDL_FreeSurface(font_texture_rgb);
     
-    FILE *fp;
-    fp = fopen("test.65x", "rb");
-    fread(system_rom, sizeof(uint8_t), 32*1024, fp);
-    fclose(fp);
     
     w6502_setup();
     CPU cpu;
     cpu.C = 0; cpu.IRQ = 0; cpu.NMI = 0; cpu.RESET = 1;
     cpu.P  = 0x24;
     cpu.S  = 0xFD;
+    loadrom("roms/test.65x",&cpu);
     
     ACCESS result;
-    
-    fp = fopen("log.txt", "r");
-    
-    char linebuffer[255];
-    
     
     int wait = 0;
     int int_count = 0;
@@ -263,8 +269,14 @@ int main(void)
             cycle_count = 0;
             
             while(SDL_PollEvent(&event)){
-               if (event.type == SDL_QUIT){
-                  quit = 1;
+               switch (event.type) {
+                case SDL_QUIT:
+                    quit = 1; break;
+                case SDL_DROPFILE:
+                    char* filename = event.drop.file;
+                    loadrom(filename, &cpu);
+                    SDL_free(filename);
+                    break;
                }
             }
             SDL_PumpEvents();
@@ -272,29 +284,6 @@ int main(void)
             }
         }
         else {
-
-        if (0) {
-            printf("\n%X  ", cpu.PC);
-            
-            cpu_state(&cpu);
-            int_count+=1;
-            
-            fgets(linebuffer, 255, fp);
-            linebuffer[4] = 0;
-            
-            
-            char* string;
-            asprintf(&string, "%04X", cpu.PC);
-            
-            printf("%s %s",linebuffer,string);
-            
-            
-            if (strcmp(string,linebuffer) != 0) {
-                char c = mygetch();
-            }
-            free(string);
-        }
-        
         //printf("\n\nø2 - %d\n", cur_cycle++);
         
         cpu_tick1(&cpu, &result);
