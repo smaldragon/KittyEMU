@@ -1,0 +1,3 @@
+[submodule "CapyASM"]
+	path = CapyASM
+	url = https://github.com/smaldragon/CapyASM.git
