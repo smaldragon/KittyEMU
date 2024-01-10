@@ -382,15 +382,14 @@ uint8_t asl_p1(CPU *cpu,ACCESS *result) {
     }
 }
 uint8_t asl_p2(CPU *cpu, uint8_t operand) {
-    uint8_t old_carry = cpu->P & 1;
     uint8_t new_carry;
     if (cpu->MODE == ACC) {
         new_carry = (cpu->A & 0x80) >> 7;
-        operand = (cpu->A << 1) + old_carry;
+        operand = (cpu->A << 1);
         cpu->A = operand;
     } else {
         new_carry = (operand & 0x80) >> 7;
-        operand = (operand << 1) + old_carry;
+        operand = (operand << 1);
     }
     
     cpu->P &= 0x7C;
