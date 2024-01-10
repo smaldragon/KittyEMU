@@ -3,7 +3,20 @@
 #include <SDL2/SDL_image.h>
 #include <termios.h>
 #include <unistd.h>
+
+
 #include "w6502.c"
+#include "psg.c"
+
+/* SDL */
+
+/* must be a power of two, decrease to allow for a lower latency, increase to reduce risk of underrun. */
+static Uint16 buffer_size = 4096;
+
+static SDL_AudioDeviceID audio_device;
+static SDL_AudioSpec audio_spec;
+static int sample_rate = 44100;
+
 
 const int screen_width = 256; const int screen_height = 256;
 const uint8_t* os_keyboard;
@@ -13,6 +26,10 @@ uint32_t next_time = 0;
 
 uint8_t system_ram[0x7000];
 uint8_t system_rom[0x8000];
+PSG     system_psg;
+
+uint8_t system_psg_samples[2000000];
+uint16_t system_psg_samples_count = 0;
 
 int cur_cycle = 7;
 
@@ -70,6 +87,68 @@ int cpu_state(CPU* cpu) {
     printf("A:%X X:%X Y:%X P:%X SP:%X I:%X C:%X | PC:%4X \n", cpu->A, cpu->X, cpu->Y, cpu->P, cpu->S, cpu->I, cpu->C, cpu->PC);
 }
 
+static void audio_callback(void *unused, Uint8 *byte_stream, int byte_stream_length);
+static int setup_sdl_audio(void) {
+
+    SDL_AudioSpec want;
+
+    SDL_Init(SDL_INIT_AUDIO | SDL_INIT_TIMER);
+
+    SDL_zero(want);
+    SDL_zero(audio_spec);
+
+    want.freq = sample_rate;
+    /* request 16bit signed little-endian sample format */
+    want.format = AUDIO_S16LSB;
+    /* request 2 channels (stereo) */
+    want.channels = 2;
+    want.samples = buffer_size;
+
+    /*
+     Tell SDL to call this function (audio_callback) that we have defined whenever there is an audiobuffer ready to be filled.
+     */
+    want.callback = audio_callback;
+
+    if(1) {
+        printf("\naudioSpec want\n");
+        printf("----------------\n");
+        printf("sample rate:%d\n", want.freq);
+        printf("channels:%d\n", want.channels);
+        printf("samples:%d\n", want.samples);
+        printf("----------------\n\n");
+    }
+
+    audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &audio_spec, 0);
+
+    if(1) {
+        printf("\naudioSpec get\n");
+        printf("----------------\n");
+        printf("sample rate:%d\n", audio_spec.freq);
+        printf("channels:%d\n", audio_spec.channels);
+        printf("samples:%d\n", audio_spec.samples);
+        printf("size:%d\n", audio_spec.size);
+        printf("----------------\n");
+    }
+
+    if (audio_device == 0) {
+        if(1) {
+            printf("\nFailed to open audio: %s\n", SDL_GetError());
+        }
+        return 1;
+    }
+
+    if (audio_spec.format != want.format) {
+        if(1) {
+            printf("\nCouldn't get requested audio format.\n");
+        }
+        return 2;
+    }
+
+    buffer_size = audio_spec.samples;
+    SDL_PauseAudioDevice(audio_device, 0); /* unpause audio */
+    return 0;
+}
+
 uint8_t system_access(CPU *cpu,ACCESS *result) {
     uint8_t operand = result->value;
     
@@ -97,7 +176,7 @@ uint8_t system_access(CPU *cpu,ACCESS *result) {
                     
                     break;
                 case 1:
-                    if (os_keyboard[SDL_SCANCODE_LALT]) operand |= 0x01;
+                    if (os_keyboard[SDL_SCANCODE_LALT] || os_keyboard[SDL_SCANCODE_RALT]) operand |= 0x01;
                     if (os_keyboard[SDL_SCANCODE_Q]) operand |= 0x02;
                     if (os_keyboard[SDL_SCANCODE_S]) operand |= 0x04;
                     if (os_keyboard[SDL_SCANCODE_G]) operand |= 0x08;
@@ -141,7 +220,9 @@ uint8_t system_access(CPU *cpu,ACCESS *result) {
                 default:
                     break;
             }
-        }
+        } else if ( (result->address & 0xF0) >= 0xE0) {
+            operand = psg_access(&system_psg, result);
+        } 
     } else {
         if (result->type == READ) {
             operand = system_rom[result->address - 0x8000];
@@ -192,6 +273,58 @@ int loadrom(char* filename, CPU* cpu)
     cpu->S  = 0xFD;
 }
 
+int quit = 0;
+
+
+static void audio_callback(void *unused, Uint8 *byte_stream, int byte_stream_length) {
+
+    /*
+     This function is called whenever the audio buffer needs to be filled to allow
+     for a continuous stream of audio.
+     Write samples to byteStream according to byteStreamLength.
+     The audio buffer is interleaved, meaning that both left and right channels exist in the same
+     buffer.
+     */
+
+    int i;
+    int16_t *s_byte_stream;
+    int remain;
+
+    /* zero the buffer */
+    memset(byte_stream, 0, byte_stream_length);
+
+    if(quit) {
+        return;
+    }
+
+    /* cast buffer as 16bit signed int */
+    s_byte_stream = (int16_t*)byte_stream;
+
+    /* buffer is interleaved, so get the length of 1 channel */
+    remain = byte_stream_length / 2;
+
+    /* write random samples to buffer to generate noise */
+    int u = 0;
+
+    float ratio = (float)1500000 / (float)sample_rate;
+    for (i = 0; i < remain; i += 2) {
+        double average_l = 0;
+        double average_r = 0;
+        for (int x = 0; x < ratio; x+=1) {
+            average_l += (system_psg_samples[u]&0xF0) >> 4;
+            average_r += (system_psg_samples[u]&0x0F);
+            u++;
+        }
+        average_l = average_l*100 / ratio; 
+        average_r = average_r*100 / ratio;
+        
+        s_byte_stream[i] = average_l;
+        s_byte_stream[i+1] = average_r;
+    }
+    
+    system_psg_samples_count = 0;
+}
+
 int main(void)
 {   
     SDL_Init(SDL_INIT_VIDEO);
@@ -236,6 +369,7 @@ int main(void)
     SDL_FreeSurface(font_texture);
     SDL_FreeSurface(font_texture_rgb);
     
+    //setup_sdl_audio();
     
     w6502_setup();
     CPU cpu;
@@ -250,10 +384,8 @@ int main(void)
     int int_count = 0;
     int cycle_count = -1;
     
-    int quit = 0;
     SDL_Event event;
     while (!quit) {
-        
         if (cycle_count >= (384/2)*312 || cycle_count == -1) {
             if (!time_left()) {
             render_screen(system_screen);
@@ -282,9 +414,13 @@ int main(void)
             SDL_PumpEvents();
             os_keyboard = SDL_GetKeyboardState(NULL);
             }
+
         }
         else {
         //printf("\n\nø2 - %d\n", cur_cycle++);
+        psg_tick_82c54(&system_psg);
+        //system_psg_samples[system_psg_samples_count++] = psg_getsample(&system_psg);
+
         
         cpu_tick1(&cpu, &result);
         

@@ -29,14 +29,17 @@ stz [$70F2]
 stz [$70F3]
 
 # Make the square waves ring :)
-ldx 60 #C4
-lda %00_11_011_0; sta [OSC_CTRL]; lda [note_lo+X]; sta [OSC_0]; lda [note_hi+X]; sta [OSC_0];
+ldx 72 #C5
+lda %00_11_010_0; sta [OSC_CTRL]; lda [note_lo+X]; sta [OSC_0]; lda [note_hi+X]; sta [OSC_0];
 
-ldx 64 #E4
-lda %01_11_011_0; sta [OSC_CTRL]; lda [note_lo+X]; sta [OSC_1]; lda [note_hi+X]; sta [OSC_1];
+# Set the waveform
+lda $F0; sta [$70F4]; sta [$70F5]; sta [$70F6]; stz [$70F7]
 
-ldx 67 #G4
-lda %10_11_011_0; sta [OSC_CTRL]; lda [note_lo+X]; sta [OSC_2]; lda [note_hi+X]; sta [OSC_2];
+ldx 76 #E5
+lda %01_11_010_0; sta [OSC_CTRL]; lda [note_lo+X]; sta [OSC_1]; lda [note_hi+X]; sta [OSC_1];
+
+ldx 79 #G5
+lda %10_11_010_0; sta [OSC_CTRL]; lda [note_lo+X]; sta [OSC_2]; lda [note_hi+X]; sta [OSC_2];
 
 # Fill up the screen with data
 lda ' ' # character
@@ -110,8 +113,8 @@ __display_font
 txa; sta [$6F00+X]
 inx; bne (display_font)
 
-cli
 __fim
+cli
 bra (fim)
 
 #---------------------------------------------------------
@@ -165,12 +168,6 @@ sta [$70F2]
 cli
 rti
 
-_text01
-.byte " Hello! Welcome to my Computer! "
-_text02
-.byte "Running @3Mhz with custom video + sound! "
-_textload
-.byte "Drag & Drop a 32k ROM to run"
 
 _keyprint
     ldy 8
@@ -184,26 +181,14 @@ _keyprint
     dey; bne (loop)
 rts
 
-_note_lo
-.byte $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00
-.byte $00 $00 $62 $29 $BD $11 $1C $D2 $2B $1D $9F $A9 $35 $39 $B1 $95
-.byte $DE $89 $8E $E9 $96 $8E $CF $55 $1A $1D $58 $CA $6F $44 $47 $75
-.byte $CB $47 $E8 $AA $8D $8E $AC $E5 $38 $A2 $24 $BA $65 $24 $F4 $D5
-.byte $C7 $C7 $D6 $F3 $1C $51 $92 $DD $33 $92 $FA $6B $E3 $64 $EB $79
-.byte $0E $A9 $49 $EF $99 $49 $FD $B5 $72 $32 $F6 $BD $87 $54 $24 $F7
-.byte $CD $A4 $7E $5B $39 $19 $FB $DE $C3 $AA $92 $7C $66 $52 $3F $2D
-.byte $1C $0C $FD $EF $E2 $D5 $C9 $BE $B3 $A9 $A0 $97 $8E $86 $7F $78
+_text01
+.byte " Hello! Welcome to my Computer! "
+_text02
+.byte "Running @3Mhz with custom video + sound! "
+_textload
+.byte "Drag & Drop a 32k ROM to run"
 
-_note_hi
-.byte $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00
-.byte $00 $00 $FD $EF $E1 $D5 $C9 $BD $B3 $A9 $9F $96 $8E $86 $7E $77
-.byte $70 $6A $64 $5E $59 $54 $4F $4B $47 $43 $3F $3B $38 $35 $32 $2F
-.byte $2C $2A $27 $25 $23 $21 $1F $1D $1C $1A $19 $17 $16 $15 $13 $12
-.byte $11 $10 $0F $0E $0E $0D $0C $0B $0B $0A $09 $09 $08 $08 $07 $07
-.byte $07 $06 $06 $05 $05 $05 $04 $04 $04 $04 $03 $03 $03 $03 $03 $02
-.byte $02 $02 $02 $02 $02 $02 $01 $01 $01 $01 $01 $01 $01 $01 $01 $01
-.byte $01 $01 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00 $00
-
+.asm frequencies
 
 #
 #   END OF CODE
@@ -215,6 +200,4 @@ _note_hi
 
 
 # The Other banks
-.pad $8000
-.pad $8000
-.pad $8000
+.pad $8000 * 15

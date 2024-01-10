@@ -382,14 +382,15 @@ uint8_t asl_p1(CPU *cpu,ACCESS *result) {
     }
 }
 uint8_t asl_p2(CPU *cpu, uint8_t operand) {
+    uint8_t old_carry = cpu->P & 1;
     uint8_t new_carry;
     if (cpu->MODE == ACC) {
         new_carry = (cpu->A & 0x80) >> 7;
-        cpu->A = cpu->A << 1;
-        operand = cpu->A;
+        operand = (cpu->A << 1) + old_carry;
+        cpu->A = operand;
     } else {
         new_carry = (operand & 0x80) >> 7;
-        operand = operand << 1;
+        operand = (operand << 1) + old_carry;
     }
     
     cpu->P &= 0x7C;
@@ -949,6 +950,7 @@ uint8_t tsb_p2(CPU *cpu, uint8_t operand) { }
 uint8_t wai_p1(CPU *cpu,ACCESS *result) { }
 uint8_t wai_p2(CPU *cpu, uint8_t operand) {
     if (cpu->IRQ || cpu->NMI || cpu->RESET) {
+        cpu->IRQ = 0;
         cpu_opend(cpu);
     }
 }
